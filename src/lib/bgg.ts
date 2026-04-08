@@ -18,9 +18,16 @@ export class BGGAuthError extends Error {
   }
 }
 
+// Identify the app to BGG so they can reach us via the GitHub repo if
+// something looks wrong. Sent on every request, with or without a token.
+const BGG_USER_AGENT =
+  "FamilieTid/1.0 (open-source hobby app; +https://github.com/stigfaerch/familytime)";
+
 function bggHeaders(): HeadersInit {
+  const headers: Record<string, string> = { "User-Agent": BGG_USER_AGENT };
   const token = process.env.BGG_API_TOKEN;
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
 }
 
 const parser = new XMLParser({
