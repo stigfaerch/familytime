@@ -27,6 +27,12 @@ export async function GET(request: NextRequest) {
   }
 
   if (category === "film") {
+    if (!process.env.TMDB_API_KEY) {
+      return NextResponse.json(
+        { error: "Films\u00f8gning er ikke konfigureret (TMDB_API_KEY mangler)." },
+        { status: 503 }
+      );
+    }
     if (query) {
       const results = await searchMovies(query);
       const mapped = results.slice(0, 10).map((r) => ({
@@ -57,6 +63,12 @@ export async function GET(request: NextRequest) {
   }
 
   if (category === "braetspil") {
+    if (!process.env.BGG_API_TOKEN) {
+      return NextResponse.json(
+        { error: "Br\u00e6tspilss\u00f8gning er ikke konfigureret (BGG_API_TOKEN mangler)." },
+        { status: 503 }
+      );
+    }
     try {
       if (query) {
         const results = await searchBoardGames(query);

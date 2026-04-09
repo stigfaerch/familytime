@@ -19,11 +19,14 @@ export type ManualActivityInput = {
 export function AddActivityForm({
   categorySlug,
   categoryName,
+  imageSearchEnabled,
   onSubmit,
   onClose,
 }: {
   categorySlug: ActivityCategorySlug;
   categoryName: string;
+  /** Whether the Unsplash image picker is configured. Controls "Find billede" visibility. */
+  imageSearchEnabled: boolean;
   onSubmit: (data: ManualActivityInput) => Promise<void>;
   onClose: () => void;
 }) {
@@ -173,13 +176,15 @@ export function AddActivityForm({
                   placeholder="URL"
                   className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 focus:border-blue-500 focus:outline-none text-sm"
                 />
-                <button
-                  type="button"
-                  onClick={() => setImageSearchOpen(true)}
-                  className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded-lg text-xs font-medium transition-colors"
-                >
-                  Find billede
-                </button>
+                {imageSearchEnabled && (
+                  <button
+                    type="button"
+                    onClick={() => setImageSearchOpen(true)}
+                    className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded-lg text-xs font-medium transition-colors"
+                  >
+                    Find billede
+                  </button>
+                )}
               </div>
             </div>
           </Field>
