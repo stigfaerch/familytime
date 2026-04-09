@@ -12,6 +12,12 @@ export type Workspace = {
   name: string;
   rewatch_cooldown_months: number | null;
   enabled_categories: string[];
+  /** Default bedtime on weekdays (Sunday-Thursday), "HH:MM". */
+  default_bedtime_weekday: string;
+  /** Default bedtime on weekends (Friday-Saturday), "HH:MM". */
+  default_bedtime_weekend: string;
+  /** Minutes spent on the evening routine between the last activity and sleep. */
+  evening_routine_minutes: number;
   created_at: string;
 };
 
@@ -21,6 +27,10 @@ export type Person = {
   name: string;
   birth_date: string;
   is_workspace_admin: boolean;
+  /** Optional per-person weekday bedtime override ("HH:MM"); null = use workspace default. */
+  bedtime_weekday: string | null;
+  /** Optional per-person weekend bedtime override ("HH:MM"); null = use workspace default. */
+  bedtime_weekend: string | null;
   created_at: string;
 };
 

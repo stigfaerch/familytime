@@ -28,10 +28,29 @@ type ActivityFull = Activity & {
 
 type IndoorFilter = "any" | "indoor" | "outdoor";
 
-function getDefaultBedtime(): string {
+/** Friday (5) and Saturday (6) count as weekend; Sun-Thu are weekdays. */
+function isWeekendToday(): boolean {
   const day = new Date().getDay();
-  if (day === 5 || day === 6) return "22:30";
-  return "21:45";
+  return day === 5 || day === 6;
+}
+
+function timeToMinutes(timeStr: string): number {
+  const [h, m] = timeStr.split(":").map(Number);
+  return h * 60 + m;
+}
+
+function minutesToTime(minutes: number): string {
+  const clamped = Math.max(0, minutes) % (24 * 60);
+  const h = Math.floor(clamped / 60);
+  const mm = clamped % 60;
+  return `${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
+
+/** Resolve the effective bedtime for a single person: per-person override if set, else workspace default. */
+function getBedtimeForPerson(p: Person, ws: Workspace, weekend: boolean): string {
+  const override = weekend ? p.bedtime_weekend : p.bedtime_weekday;
+  if (override) return override;
+  return weekend ? ws.default_bedtime_weekend : ws.default_bedtime_weekday;
 }
 
 function minutesUntil(timeStr: string): number {
@@ -86,7 +105,15 @@ export default function StartPage() {
 
   const [selectedPersons, setSelectedPersons] = useState<Set<string>>(new Set());
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
-  const [bedtime, setBedtime] = useState(getDefaultBedtime);
+  // "Bagkant" is the time by which the last activity of the evening must start.
+  // Defaults to the earliest effective bedtime among selected persons; the
+  // evening-routine minutes are subtracted from this to get the real cutoff,
+  // unless the user moves the bagkant to more than one hour before bedtime
+  // (in which case the routine auto-disables). Kept as a plain "HH:MM" string
+  // to match the HTML <input type="time"> format. An empty string means
+  // "not yet synced" — the sync effect below populates it once the workspace
+  // defaults and/or selected persons are known.
+  const [bagkant, setBagkant] = useState<string>("");
   const [indoorFilter, setIndoorFilter] = useState<IndoorFilter>("any");
 
   // Streaming platforms
@@ -214,7 +241,57 @@ export default function StartPage() {
     selectedSlugs.has("lege") || selectedSlugs.has("kreative") || selectedSlugs.has("andre");
   const showStreamingFilter = selectedSlugs.has("film") && activePlatformIds.size > 0;
 
-  const availableMinutes = minutesUntil(bedtime);
+  const weekendToday = isWeekendToday();
+
+  // Effective bedtime: the earliest bedtime among selected persons (most
+  // restrictive) on the current day type. Falls back to the workspace default
+  // when nobody is selected yet, so the UI can show something sensible.
+  const effectiveBedtime = useMemo(() => {
+    if (!workspace) return { time: "21:45", earliestPersonName: null as string | null };
+    const selected = persons.filter((p) => selectedPersons.has(p.id));
+    if (selected.length === 0) {
+      return {
+        time: weekendToday ? workspace.default_bedtime_weekend : workspace.default_bedtime_weekday,
+        earliestPersonName: null,
+      };
+    }
+    let best: { time: string; name: string } | null = null;
+    for (const p of selected) {
+      const t = getBedtimeForPerson(p, workspace, weekendToday);
+      if (best === null || t < best.time) {
+        best = { time: t, name: p.name };
+      }
+    }
+    return { time: best!.time, earliestPersonName: best!.name };
+  }, [workspace, persons, selectedPersons, weekendToday]);
+
+  // Sync bagkant to the effective bedtime whenever the effective bedtime
+  // changes. This means: selecting/deselecting people resets any manual
+  // bagkant override. That's intentional — changing who's present is a new
+  // planning session, so the default should follow the new effective bedtime.
+  useEffect(() => {
+    setBagkant(effectiveBedtime.time);
+  }, [effectiveBedtime.time]);
+
+  const routineMinutes = workspace?.evening_routine_minutes ?? 0;
+
+  // Evening routine is active when the bagkant is within one hour of bedtime.
+  // If the user moves bagkant more than 60 min earlier than bedtime, the
+  // session is no longer considered "just before sleeping" and the routine
+  // time stops being subtracted.
+  const routineActive = useMemo(() => {
+    if (!bagkant) return true;
+    const bedtimeMin = timeToMinutes(effectiveBedtime.time);
+    const bagkantMin = timeToMinutes(bagkant);
+    return bedtimeMin - bagkantMin <= 60;
+  }, [effectiveBedtime.time, bagkant]);
+
+  // Real cutoff time = bagkant minus routine (if active).
+  const endTimeMinutes = bagkant
+    ? timeToMinutes(bagkant) - (routineActive ? routineMinutes : 0)
+    : 0;
+  const endTime = minutesToTime(endTimeMinutes);
+  const availableMinutes = bagkant ? minutesUntil(endTime) : 0;
   const presentCount = selectedPersons.size;
 
   const youngestAge = useMemo(() => {
@@ -451,23 +528,62 @@ export default function StartPage() {
           <h2 className="text-lg font-semibold">Filtre</h2>
 
           {showBedtimeFilter && (
-            <div className="space-y-2">
+            <div className="space-y-3">
+              {/* Show the active bedtime and routine settings so it's clear
+                  which values are being used once persons are selected. */}
+              <div className="text-sm space-y-1">
+                <p className="text-gray-400">
+                  Sovetid:{" "}
+                  <span className="text-gray-200 font-medium">{effectiveBedtime.time}</span>
+                  {effectiveBedtime.earliestPersonName ? (
+                    <span className="text-gray-500">
+                      {" "}
+                      ({effectiveBedtime.earliestPersonName} g&aring;r tidligst i seng,{" "}
+                      {weekendToday ? "weekend" : "hverdag"})
+                    </span>
+                  ) : (
+                    <span className="text-gray-500">
+                      {" "}
+                      (workspace-standard, {weekendToday ? "weekend" : "hverdag"})
+                    </span>
+                  )}
+                </p>
+                {routineMinutes > 0 && (
+                  <p className="text-gray-400">
+                    Aftenrutine:{" "}
+                    {routineActive ? (
+                      <span className="text-gray-200 font-medium">
+                        {routineMinutes} min aktiv
+                      </span>
+                    ) : (
+                      <span className="text-gray-500">
+                        ikke aktiv (bagkant er mere end &eacute;n time f&oslash;r sovetid)
+                      </span>
+                    )}
+                  </p>
+                )}
+              </div>
+
               <div className="flex items-center gap-4 flex-wrap">
-                <label className="text-gray-400">Sovetid:</label>
+                <label className="text-gray-400">Bagkant:</label>
                 <input
                   type="time"
-                  value={bedtime}
-                  onChange={(e) => setBedtime(e.target.value)}
+                  value={bagkant}
+                  onChange={(e) => setBagkant(e.target.value)}
                   className="px-4 py-2 rounded-lg bg-gray-800 border border-gray-700 focus:border-blue-500 focus:outline-none"
                 />
               </div>
+
               {availableMinutes > 0 ? (
                 <p className="text-gray-300 text-sm">
-                  Der er <span className="font-bold text-green-400">{availableMinutes} minutter</span> til sovetid.
+                  Aktiviteter skal v&aelig;re f&aelig;rdige kl.{" "}
+                  <span className="font-bold text-green-400">{endTime}</span>. Du har{" "}
+                  <span className="font-bold text-green-400">{availableMinutes} min</span>{" "}
+                  tilbage.
                 </p>
               ) : (
                 <p className="text-red-400 font-medium text-sm">
-                  Sovetiden er overskredet. Juster sovetiden for at se forslag.
+                  Sluttidspunktet er overskredet. Juster bagkanten for at se forslag.
                 </p>
               )}
             </div>

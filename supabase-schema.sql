@@ -24,6 +24,20 @@ create table workspaces (
   rewatch_cooldown_months int default null,
   -- Empty array = all categories enabled. Otherwise: list of activity_categories.id.
   enabled_categories uuid[] not null default '{}',
+  -- Default bedtimes used on the start page to compute the latest activity
+  -- cut-off. Stored as "HH:MM" text to match the HTML <input type="time">
+  -- format directly. Per-person overrides live on the persons table.
+  -- Weekday = Sunday-Thursday. Weekend = Friday-Saturday.
+  default_bedtime_weekday text not null default '21:45',
+  default_bedtime_weekend text not null default '22:30',
+  -- Evening routine minutes: time spent between finishing the last activity
+  -- and actually going to sleep (brushing teeth, toilet, drinks, chat).
+  -- Subtracted from the chosen bagkant on the start page, unless the user
+  -- has moved the bagkant to more than one hour before bedtime (in which
+  -- case the routine is auto-disabled because the session is no longer
+  -- considered "right before bedtime"). Workspace-level only; no per-person
+  -- override.
+  evening_routine_minutes int not null default 40,
   created_at timestamptz not null default now()
 );
 
@@ -36,6 +50,10 @@ create table persons (
   name text not null,
   birth_date date not null,
   is_workspace_admin boolean not null default false,
+  -- Optional per-person bedtime overrides. NULL = use the workspace default.
+  -- Stored as "HH:MM" text to match the HTML <input type="time"> format.
+  bedtime_weekday text,
+  bedtime_weekend text,
   created_at timestamptz not null default now()
 );
 

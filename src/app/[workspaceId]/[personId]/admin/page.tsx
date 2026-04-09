@@ -110,6 +110,31 @@ export default function WorkspaceAdminPage() {
     loadData();
   }
 
+  async function setDefaultBedtimeWeekday(time: string) {
+    await supabase.from("workspaces").update({ default_bedtime_weekday: time }).eq("id", workspaceId);
+    loadData();
+  }
+
+  async function setDefaultBedtimeWeekend(time: string) {
+    await supabase.from("workspaces").update({ default_bedtime_weekend: time }).eq("id", workspaceId);
+    loadData();
+  }
+
+  async function setEveningRoutineMinutes(minutes: number) {
+    const value = Number.isFinite(minutes) && minutes >= 0 ? minutes : 0;
+    await supabase.from("workspaces").update({ evening_routine_minutes: value }).eq("id", workspaceId);
+    loadData();
+  }
+
+  async function setPersonBedtime(
+    pId: string,
+    field: "bedtime_weekday" | "bedtime_weekend",
+    time: string | null
+  ) {
+    await supabase.from("persons").update({ [field]: time }).eq("id", pId);
+    loadData();
+  }
+
   async function toggleCategory(categoryId: string) {
     if (!workspace) return;
     // An empty enabled_categories array means "all enabled". To toggle from that
@@ -283,6 +308,123 @@ export default function WorkspaceAdminPage() {
               </button>
             );
           })}
+        </div>
+      </section>
+
+      {/* Bedtime & evening routine (workspace defaults) */}
+      <section className="bg-gray-900 rounded-xl p-6 space-y-4">
+        <div>
+          <h2 className="text-xl font-semibold">Sovetid og aftenrutine</h2>
+          <p className="text-gray-400 text-sm mt-1">
+            Standard sovetid bruges p&aring; startsiden til at beregne hvor
+            lang en aktivitet m&aring; vare. Hverdag = s&oslash;ndag&ndash;torsdag,
+            weekend = fredag&ndash;l&oslash;rdag.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <label className="block space-y-1">
+            <span className="text-xs text-gray-400 font-medium">Sovetid hverdag</span>
+            <input
+              type="time"
+              value={workspace?.default_bedtime_weekday ?? "21:45"}
+              onChange={(e) => setDefaultBedtimeWeekday(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 focus:border-blue-500 focus:outline-none"
+            />
+          </label>
+          <label className="block space-y-1">
+            <span className="text-xs text-gray-400 font-medium">Sovetid weekend</span>
+            <input
+              type="time"
+              value={workspace?.default_bedtime_weekend ?? "22:30"}
+              onChange={(e) => setDefaultBedtimeWeekend(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 focus:border-blue-500 focus:outline-none"
+            />
+          </label>
+        </div>
+        <div>
+          <label className="block space-y-1">
+            <span className="text-xs text-gray-400 font-medium">
+              Aftenrutine (minutter)
+            </span>
+            <input
+              type="number"
+              min={0}
+              max={240}
+              step={5}
+              value={workspace?.evening_routine_minutes ?? 40}
+              onChange={(e) => setEveningRoutineMinutes(parseInt(e.target.value, 10))}
+              className="w-full sm:w-48 px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 focus:border-blue-500 focus:outline-none"
+            />
+          </label>
+          <p className="text-gray-500 text-xs mt-2">
+            Tid fra en aktivitet er f&aelig;rdig til man l&aelig;gger sig til at sove
+            &mdash; b&oslash;rste t&aelig;nder, toiletbes&oslash;g, noget at drikke, samtaler.
+            Tr&aelig;kkes fra &quot;bagkant&quot; p&aring; startsiden, medmindre bagkanten er
+            sat mere end &eacute;n time f&oslash;r sovetid.
+          </p>
+        </div>
+      </section>
+
+      {/* Per-person bedtime overrides */}
+      <section className="bg-gray-900 rounded-xl p-6 space-y-4">
+        <div>
+          <h2 className="text-xl font-semibold">Sovetid pr. person</h2>
+          <p className="text-gray-400 text-sm mt-1">
+            Valgfri override pr. person. Lades feltet st&aring; tomt bruges workspace-standarden.
+            Aftenrutinen er f&aelig;lles og kan ikke overrides pr. person.
+          </p>
+        </div>
+        <div className="space-y-2">
+          {persons.map((p) => (
+            <div
+              key={p.id}
+              className="flex flex-wrap items-center gap-3 bg-gray-800 rounded-lg px-4 py-3"
+            >
+              <span className="font-medium min-w-[100px]">{p.name}</span>
+              <label className="flex items-center gap-2 text-xs text-gray-400">
+                Hverdag
+                <input
+                  type="time"
+                  value={p.bedtime_weekday ?? ""}
+                  onChange={(e) =>
+                    setPersonBedtime(p.id, "bedtime_weekday", e.target.value || null)
+                  }
+                  className="px-2 py-1 rounded bg-gray-900 border border-gray-700 focus:border-blue-500 focus:outline-none text-gray-200"
+                />
+                {p.bedtime_weekday && (
+                  <button
+                    type="button"
+                    onClick={() => setPersonBedtime(p.id, "bedtime_weekday", null)}
+                    className="text-[10px] px-2 py-0.5 bg-gray-700 hover:bg-gray-600 rounded"
+                    title="Nulstil til workspace-standard"
+                  >
+                    Nulstil
+                  </button>
+                )}
+              </label>
+              <label className="flex items-center gap-2 text-xs text-gray-400">
+                Weekend
+                <input
+                  type="time"
+                  value={p.bedtime_weekend ?? ""}
+                  onChange={(e) =>
+                    setPersonBedtime(p.id, "bedtime_weekend", e.target.value || null)
+                  }
+                  className="px-2 py-1 rounded bg-gray-900 border border-gray-700 focus:border-blue-500 focus:outline-none text-gray-200"
+                />
+                {p.bedtime_weekend && (
+                  <button
+                    type="button"
+                    onClick={() => setPersonBedtime(p.id, "bedtime_weekend", null)}
+                    className="text-[10px] px-2 py-0.5 bg-gray-700 hover:bg-gray-600 rounded"
+                    title="Nulstil til workspace-standard"
+                  >
+                    Nulstil
+                  </button>
+                )}
+              </label>
+            </div>
+          ))}
         </div>
       </section>
 
