@@ -1,1 +1,11 @@
 @import "tailwindcss";
+
+/* Blinking red border for activities that are past the cutoff but shown
+   via the "+15 min" overflow toggle on the start page. */
+@keyframes border-blink {
+  0%, 100% { border-color: transparent; }
+  50% { border-color: #ef4444; }
+}
+.animate-border-blink {
+  animation: border-blink 1s ease-in-out infinite;
+}

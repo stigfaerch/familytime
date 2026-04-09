@@ -18,6 +18,8 @@ export type Workspace = {
   default_bedtime_weekend: string;
   /** Minutes spent on the evening routine between the last activity and sleep. */
   evening_routine_minutes: number;
+  /** Preparation time for films (snacks, bathroom, getting settled). */
+  film_preparation_minutes: number;
   created_at: string;
 };
 
@@ -53,6 +55,9 @@ export type Activity = {
   // Board game-specific
   min_players: number | null;
   max_players: number | null;
+  // Preparation time (setup, finding supplies, etc.) — for films the workspace
+  // film_preparation_minutes is used instead.
+  preparation_minutes: number;
   // Indoor / outdoor
   indoor: boolean | null;
 };

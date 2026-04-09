@@ -244,6 +244,7 @@ export function PersonPageClient({ features }: { features: FeatureFlags }) {
         bgg_id: selectedCat.slug === "braetspil" ? details.bgg_id : null,
         min_players: details.min_players ?? null,
         max_players: details.max_players ?? null,
+        preparation_minutes: 5,
         indoor: null as boolean | null,
         added_by: personId,
       };
@@ -275,6 +276,7 @@ export function PersonPageClient({ features }: { features: FeatureFlags }) {
       info_url: input.info_url,
       tmdb_id: null,
       bgg_id: null,
+      preparation_minutes: input.preparation_minutes,
       min_players: input.min_players,
       max_players: input.max_players,
       indoor: input.indoor,

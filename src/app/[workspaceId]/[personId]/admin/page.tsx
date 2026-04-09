@@ -126,6 +126,12 @@ export default function WorkspaceAdminPage() {
     loadData();
   }
 
+  async function setFilmPreparationMinutes(minutes: number) {
+    const value = Number.isFinite(minutes) && minutes >= 0 ? minutes : 10;
+    await supabase.from("workspaces").update({ film_preparation_minutes: value }).eq("id", workspaceId);
+    loadData();
+  }
+
   async function setPersonBedtime(
     pId: string,
     field: "bedtime_weekday" | "bedtime_weekend",
@@ -361,6 +367,27 @@ export default function WorkspaceAdminPage() {
             &mdash; b&oslash;rste t&aelig;nder, toiletbes&oslash;g, noget at drikke, samtaler.
             Tr&aelig;kkes fra &quot;bagkant&quot; p&aring; startsiden, medmindre bagkanten er
             sat mere end &eacute;n time f&oslash;r sovetid.
+          </p>
+        </div>
+        <div>
+          <label className="block space-y-1">
+            <span className="text-xs text-gray-400 font-medium">
+              Forberedelsestid til film (minutter)
+            </span>
+            <input
+              type="number"
+              min={0}
+              max={60}
+              step={5}
+              value={workspace?.film_preparation_minutes ?? 10}
+              onChange={(e) => setFilmPreparationMinutes(parseInt(e.target.value, 10))}
+              className="w-full sm:w-48 px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 focus:border-blue-500 focus:outline-none"
+            />
+          </label>
+          <p className="text-gray-500 text-xs mt-2">
+            Tid til at hente snacks, g&aring; p&aring; toilettet og komme p&aring;
+            plads inden filmen starter. L&aelig;gges til filmens varighed.
+            For andre aktiviteter s&aelig;ttes forberedelsestid pr. aktivitet.
           </p>
         </div>
       </section>

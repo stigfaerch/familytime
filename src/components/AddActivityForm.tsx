@@ -9,6 +9,7 @@ export type ManualActivityInput = {
   description: string | null;
   min_age: number;
   duration_minutes: number | null;
+  preparation_minutes: number;
   image_url: string;
   info_url: string | null;
   min_players: number | null;
@@ -38,12 +39,15 @@ export function AddActivityForm({
   const [infoUrl, setInfoUrl] = useState("");
   const [minPlayers, setMinPlayers] = useState("");
   const [maxPlayers, setMaxPlayers] = useState("");
+  const [prepMinutes, setPrepMinutes] = useState("5");
   const [indoor, setIndoor] = useState<"indoor" | "outdoor" | "both">("both");
   const [imageSearchOpen, setImageSearchOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const showPlayers = categorySlug === "braetspil";
   const showIndoor = categorySlug === "lege" || categorySlug === "kreative" || categorySlug === "andre";
+  // Film preparation time is workspace-level; per-activity prep is only for other categories.
+  const showPrepTime = categorySlug !== "film";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -55,6 +59,7 @@ export function AddActivityForm({
         description: description.trim() || null,
         min_age: parseInt(minAge, 10) || 0,
         duration_minutes: duration ? parseInt(duration, 10) : null,
+        preparation_minutes: parseInt(prepMinutes, 10) || 5,
         image_url: imageUrl,
         info_url: infoUrl.trim() || null,
         min_players: showPlayers && minPlayers ? parseInt(minPlayers, 10) : null,
@@ -118,6 +123,19 @@ export function AddActivityForm({
               />
             </Field>
           </div>
+
+          {showPrepTime && (
+            <Field label="Forberedelsestid (min)">
+              <input
+                type="number"
+                min="0"
+                value={prepMinutes}
+                onChange={(e) => setPrepMinutes(e.target.value)}
+                placeholder="5"
+                className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 focus:border-blue-500 focus:outline-none"
+              />
+            </Field>
+          )}
 
           {showPlayers && (
             <div className="grid grid-cols-2 gap-3">

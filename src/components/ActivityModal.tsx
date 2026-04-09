@@ -248,10 +248,25 @@ export function ActivityModal({
   );
 }
 
-/** Small header line showing duration / players / age / indoor based on what's set. */
-export function ActivityMetaLine({ activity }: { activity: Activity }) {
+/** Small header line showing duration / players / age / indoor based on what's set.
+ *  When `effectivePrepMinutes` is provided, preparation time is shown after the duration. */
+export function ActivityMetaLine({
+  activity,
+  effectivePrepMinutes,
+}: {
+  activity: Activity;
+  /** Resolved preparation minutes (workspace value for films, per-activity for others). */
+  effectivePrepMinutes?: number;
+}) {
   const parts: React.ReactNode[] = [];
   if (activity.duration_minutes != null) parts.push(<span key="dur">{activity.duration_minutes} min</span>);
+  if (effectivePrepMinutes != null && effectivePrepMinutes > 0) {
+    parts.push(
+      <span key="prep" className="text-amber-400">
+        +{effectivePrepMinutes} min forb.
+      </span>
+    );
+  }
   if (activity.min_players != null || activity.max_players != null) {
     const range =
       activity.min_players != null && activity.max_players != null && activity.min_players !== activity.max_players

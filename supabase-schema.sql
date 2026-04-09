@@ -38,6 +38,9 @@ create table workspaces (
   -- considered "right before bedtime"). Workspace-level only; no per-person
   -- override.
   evening_routine_minutes int not null default 40,
+  -- Preparation time for films (snacks, bathroom, getting settled).
+  -- Used instead of the per-activity preparation_minutes for films.
+  film_preparation_minutes int not null default 10,
   created_at timestamptz not null default now()
 );
 
@@ -83,6 +86,11 @@ create table activities (
   -- Board game-specific
   min_players int,
   max_players int,
+
+  -- Preparation time before the activity can begin (setting up pieces, finding
+  -- supplies, etc.). Added to duration_minutes when filtering on the start page.
+  -- For films, the workspace-level film_preparation_minutes is used instead.
+  preparation_minutes int not null default 5,
 
   -- Indoor / outdoor (lege, kreative, andre — also valid for films/games if relevant)
   indoor boolean,                             -- null = unspecified / both

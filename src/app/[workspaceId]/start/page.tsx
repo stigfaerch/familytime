@@ -103,6 +103,14 @@ export default function StartPage() {
   const [activities, setActivities] = useState<ActivityFull[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Tick every 30 s so availableMinutes, flame icons, and overdue borders
+  // stay in sync with the clock without a per-second re-render.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
   const [selectedPersons, setSelectedPersons] = useState<Set<string>>(new Set());
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
   // "Bagkant" is the time by which the last activity of the evening must start.
@@ -114,6 +122,8 @@ export default function StartPage() {
   // "not yet synced" — the sync effect below populates it once the workspace
   // defaults and/or selected persons are known.
   const [bagkant, setBagkant] = useState<string>("");
+  // When active, show activities up to 15 minutes past the cutoff.
+  const [showOverflow, setShowOverflow] = useState(false);
   const [indoorFilter, setIndoorFilter] = useState<IndoorFilter>("any");
 
   // Streaming platforms
@@ -291,7 +301,11 @@ export default function StartPage() {
     ? timeToMinutes(bagkant) - (routineActive ? routineMinutes : 0)
     : 0;
   const endTime = minutesToTime(endTimeMinutes);
-  const availableMinutes = bagkant ? minutesUntil(endTime) : 0;
+  // Re-evaluated whenever `now` ticks (every 30 s) so that flame icons,
+  // overdue borders, and the "minutes remaining" display stay in sync.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const availableMinutes = useMemo(() => (bagkant ? minutesUntil(endTime) : 0), [bagkant, endTime, now]);
+  const filmPrepMinutes = workspace?.film_preparation_minutes ?? 10;
   const presentCount = selectedPersons.size;
 
   const youngestAge = useMemo(() => {
@@ -340,8 +354,13 @@ export default function StartPage() {
           }
         }
 
-        // 3. Time filter
-        if (a.duration_minutes != null && a.duration_minutes > availableMinutes) return false;
+        // 3. Time filter (duration + preparation must fit in available minutes,
+        //    with an optional +15 min grace period when the overflow toggle is on)
+        const prepMin = isFilm ? filmPrepMinutes : a.preparation_minutes;
+        const totalMinutes = (a.duration_minutes ?? 0) + prepMin;
+        if (a.duration_minutes != null) {
+          if (totalMinutes > availableMinutes + (showOverflow ? 15 : 0)) return false;
+        }
 
         // 4. Age filter
         if (a.min_age > youngestAge) return false;
@@ -409,6 +428,11 @@ export default function StartPage() {
         if (redoRequestPersons.length > 0) score += 50;
         if (recentViewing) score += 1000;
 
+        const effectivePrepMin = isFilm ? filmPrepMinutes : a.preparation_minutes;
+        const actTotalMinutes = (a.duration_minutes ?? 0) + effectivePrepMin;
+        // minutesRemaining > 0 = fits, 0..−15 = overflow, ≤ −15 = hidden
+        const minutesRemaining = availableMinutes - actTotalMinutes;
+
         return {
           activity: a,
           category: cat,
@@ -423,6 +447,13 @@ export default function StartPage() {
           platformNames,
           recentViewing: recentViewing ?? null,
           redoRequestPersons,
+          effectivePrepMinutes: effectivePrepMin,
+          totalMinutes: actTotalMinutes,
+          minutesRemaining,
+          /** Activity fits but is within 15 min of the cutoff. */
+          isLastMinute: minutesRemaining > 0 && minutesRemaining <= 15,
+          /** Activity is past the cutoff (only visible when overflow is on). */
+          isOverflow: a.duration_minutes != null && minutesRemaining <= 0,
         };
       })
       .sort((a, b) => b.score - a.score);
@@ -435,6 +466,8 @@ export default function StartPage() {
     presentCount,
     indoorFilter,
     onlyStreaming,
+    showOverflow,
+    filmPrepMinutes,
     persons,
     activePlatformIds,
     allPlatforms,
@@ -574,18 +607,31 @@ export default function StartPage() {
                 />
               </div>
 
-              {availableMinutes > 0 ? (
-                <p className="text-gray-300 text-sm">
-                  Aktiviteter skal v&aelig;re f&aelig;rdige kl.{" "}
-                  <span className="font-bold text-green-400">{endTime}</span>. Du har{" "}
-                  <span className="font-bold text-green-400">{availableMinutes} min</span>{" "}
-                  tilbage.
-                </p>
-              ) : (
-                <p className="text-red-400 font-medium text-sm">
-                  Sluttidspunktet er overskredet. Juster bagkanten for at se forslag.
-                </p>
-              )}
+              <div className="flex items-center gap-3 flex-wrap">
+                {availableMinutes > 0 ? (
+                  <p className="text-gray-300 text-sm">
+                    Aktiviteter skal v&aelig;re f&aelig;rdige kl.{" "}
+                    <span className="font-bold text-green-400">{endTime}</span>. Du har{" "}
+                    <span className="font-bold text-green-400">{availableMinutes} min</span>{" "}
+                    tilbage.
+                  </p>
+                ) : (
+                  <p className="text-red-400 font-medium text-sm">
+                    Sluttidspunktet er overskredet.
+                  </p>
+                )}
+                <button
+                  onClick={() => setShowOverflow((v) => !v)}
+                  title="Vis aktiviteter op til 15 minutter over tiden"
+                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                    showOverflow
+                      ? "bg-amber-600 hover:bg-amber-700 text-white"
+                      : "bg-gray-800 hover:bg-gray-700 text-gray-500"
+                  }`}
+                >
+                  +15 min
+                </button>
+              </div>
             </div>
           )}
 
@@ -633,7 +679,7 @@ export default function StartPage() {
       )}
 
       {/* Step 4: suggestions */}
-      {selectedPersons.size > 0 && selectedCategories.size > 0 && availableMinutes > 0 && (
+      {selectedPersons.size > 0 && selectedCategories.size > 0 && (availableMinutes > 0 || showOverflow) && (
         <section className="space-y-4">
           <h2 className="text-lg font-semibold">Forslag</h2>
           {suggestions.length === 0 ? (
@@ -657,6 +703,9 @@ export default function StartPage() {
                   platformNames,
                   recentViewing,
                   redoRequestPersons,
+                  effectivePrepMinutes,
+                  isLastMinute,
+                  isOverflow,
                 }) => {
                   const isChosen = !!recentViewing;
 
@@ -666,9 +715,11 @@ export default function StartPage() {
                       className={`rounded-xl p-4 flex gap-4 transition-all ${
                         isChosen
                           ? "bg-green-950 ring-2 ring-green-500 border-l-4 border-green-400"
-                          : `bg-gray-900 ${allHighRated ? "ring-2 ring-green-500/50" : ""} ${
-                              isFilm && availableOnPlatform ? "border-l-4 border-purple-500" : ""
-                            }`
+                          : isOverflow
+                            ? "bg-gray-900 opacity-60 animate-border-blink border-2 border-transparent"
+                            : `bg-gray-900 ${allHighRated ? "ring-2 ring-green-500/50" : ""} ${
+                                isFilm && availableOnPlatform ? "border-l-4 border-purple-500" : ""
+                              }`
                       }`}
                     >
                       {activity.image_url ? (
@@ -687,8 +738,20 @@ export default function StartPage() {
                               {category.name}
                             </p>
                           )}
-                          <h3 className="font-semibold text-lg">{activity.title}</h3>
-                          <ActivityMetaLine activity={activity} />
+                          <h3 className="font-semibold text-lg">
+                            {activity.title}
+                            {isLastMinute && !isChosen && (
+                              <span className="ml-2" title="Tiden er knap!">
+                                &#x1F525;
+                              </span>
+                            )}
+                          </h3>
+                          {isOverflow && (
+                            <span className="text-xs bg-red-800/50 text-red-300 px-1.5 py-0.5 rounded font-medium">
+                              Over tid
+                            </span>
+                          )}
+                          <ActivityMetaLine activity={activity} effectivePrepMinutes={effectivePrepMinutes} />
                           <p className="text-sm text-gray-400 mt-1">
                             Gns. rating: {avgRating.toFixed(1)}
                           </p>
