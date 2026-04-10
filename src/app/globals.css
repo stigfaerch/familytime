@@ -1,11 +1,20 @@
 @import "tailwindcss";
 
-/* Blinking red border for activities that are past the cutoff but shown
-   via the "+15 min" overflow toggle on the start page. */
+/* Blinking red border for activities that are past the cutoff (overdue)
+   on the start page. */
 @keyframes border-blink {
   0%, 100% { border-color: transparent; }
   50% { border-color: #ef4444; }
 }
 .animate-border-blink {
   animation: border-blink 1s ease-in-out infinite;
+}
+
+/* Blinking flame emoji for last-minute activities (within 15 min of cutoff). */
+@keyframes flame-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.animate-flame-blink {
+  animation: flame-blink 0.8s ease-in-out infinite;
 }

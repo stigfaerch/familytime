@@ -53,12 +53,12 @@ function getBedtimeForPerson(p: Person, ws: Workspace, weekend: boolean): string
   return weekend ? ws.default_bedtime_weekend : ws.default_bedtime_weekday;
 }
 
-function minutesUntil(timeStr: string): number {
-  const now = new Date();
+/** Minutes from a given timestamp to a clock time ("HH:MM") today. */
+function minutesFromTo(fromMs: number, timeStr: string): number {
   const [h, m] = timeStr.split(":").map(Number);
-  const target = new Date(now);
+  const target = new Date(fromMs);
   target.setHours(h, m, 0, 0);
-  return Math.floor((target.getTime() - now.getTime()) / 60000);
+  return Math.floor((target.getTime() - fromMs) / 60000);
 }
 
 /** Cooldown applies to films only. Returns true if the activity should be hidden. */
@@ -103,12 +103,32 @@ export default function StartPage() {
   const [activities, setActivities] = useState<ActivityFull[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Tick every 30 s so availableMinutes, flame icons, and overdue borders
-  // stay in sync with the clock without a per-second re-render.
+  // Tick every 30 s so flame icons, overdue borders, the "minutes remaining"
+  // display, and the inactivity check stay in sync with the clock.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(id);
+  }, []);
+
+  // Snapshot of when the page loaded (or was last reset). The activity filter
+  // uses minutes-from-snapshot so that activities that fit at load time stay in
+  // the list permanently — they are never removed, only marked overdue.
+  const [snapshotTime, setSnapshotTime] = useState(() => Date.now());
+
+  // Track last user interaction so we can offer a reset button after 15 min of
+  // inactivity (the family left the page open and came back later).
+  const [lastInteraction, setLastInteraction] = useState(() => Date.now());
+  useEffect(() => {
+    function onActivity() { setLastInteraction(Date.now()); }
+    window.addEventListener("click", onActivity);
+    window.addEventListener("keydown", onActivity);
+    window.addEventListener("touchstart", onActivity);
+    return () => {
+      window.removeEventListener("click", onActivity);
+      window.removeEventListener("keydown", onActivity);
+      window.removeEventListener("touchstart", onActivity);
+    };
   }, []);
 
   const [selectedPersons, setSelectedPersons] = useState<Set<string>>(new Set());
@@ -122,8 +142,6 @@ export default function StartPage() {
   // "not yet synced" — the sync effect below populates it once the workspace
   // defaults and/or selected persons are known.
   const [bagkant, setBagkant] = useState<string>("");
-  // When active, show activities up to 15 minutes past the cutoff.
-  const [showOverflow, setShowOverflow] = useState(false);
   const [indoorFilter, setIndoorFilter] = useState<IndoorFilter>("any");
 
   // Streaming platforms
@@ -301,10 +319,21 @@ export default function StartPage() {
     ? timeToMinutes(bagkant) - (routineActive ? routineMinutes : 0)
     : 0;
   const endTime = minutesToTime(endTimeMinutes);
-  // Re-evaluated whenever `now` ticks (every 30 s) so that flame icons,
-  // overdue borders, and the "minutes remaining" display stay in sync.
+  // Snapshot-based available minutes — used for FILTERING only.  Activities
+  // that fitted at page-load (or last reset) time are never removed.
+  const snapshotAvailableMinutes = useMemo(
+    () => (bagkant ? minutesFromTo(snapshotTime, endTime) : 0),
+    [bagkant, endTime, snapshotTime],
+  );
+
+  // Live available minutes — re-evaluated whenever `now` ticks (every 30 s)
+  // so that flame icons, overdue borders and the "minutes remaining" display
+  // stay in sync with the wall clock.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const availableMinutes = useMemo(() => (bagkant ? minutesUntil(endTime) : 0), [bagkant, endTime, now]);
+  const liveAvailableMinutes = useMemo(
+    () => (bagkant ? minutesFromTo(now, endTime) : 0),
+    [bagkant, endTime, now],
+  );
   const filmPrepMinutes = workspace?.film_preparation_minutes ?? 10;
   const presentCount = selectedPersons.size;
 
@@ -354,12 +383,11 @@ export default function StartPage() {
           }
         }
 
-        // 3. Time filter (duration + preparation must fit in available minutes,
-        //    with an optional +15 min grace period when the overflow toggle is on)
+        // 3. Time filter — uses the snapshot so activities never disappear.
         const prepMin = isFilm ? filmPrepMinutes : a.preparation_minutes;
         const totalMinutes = (a.duration_minutes ?? 0) + prepMin;
         if (a.duration_minutes != null) {
-          if (totalMinutes > availableMinutes + (showOverflow ? 15 : 0)) return false;
+          if (totalMinutes > snapshotAvailableMinutes) return false;
         }
 
         // 4. Age filter
@@ -430,8 +458,8 @@ export default function StartPage() {
 
         const effectivePrepMin = isFilm ? filmPrepMinutes : a.preparation_minutes;
         const actTotalMinutes = (a.duration_minutes ?? 0) + effectivePrepMin;
-        // minutesRemaining > 0 = fits, 0..−15 = overflow, ≤ −15 = hidden
-        const minutesRemaining = availableMinutes - actTotalMinutes;
+        // minutesRemaining uses the live clock for display indicators.
+        const minutesRemaining = liveAvailableMinutes - actTotalMinutes;
 
         return {
           activity: a,
@@ -452,8 +480,8 @@ export default function StartPage() {
           minutesRemaining,
           /** Activity fits but is within 15 min of the cutoff. */
           isLastMinute: minutesRemaining > 0 && minutesRemaining <= 15,
-          /** Activity is past the cutoff (only visible when overflow is on). */
-          isOverflow: a.duration_minutes != null && minutesRemaining <= 0,
+          /** Activity is past the cutoff based on the live clock. */
+          isOverdue: a.duration_minutes != null && minutesRemaining <= 0,
         };
       })
       .sort((a, b) => b.score - a.score);
@@ -461,12 +489,12 @@ export default function StartPage() {
     activities,
     selectedPersons,
     selectedCategories,
-    availableMinutes,
+    snapshotAvailableMinutes,
+    liveAvailableMinutes,
     youngestAge,
     presentCount,
     indoorFilter,
     onlyStreaming,
-    showOverflow,
     filmPrepMinutes,
     persons,
     activePlatformIds,
@@ -474,6 +502,16 @@ export default function StartPage() {
     cooldownMonths,
     categoryById,
   ]);
+
+  // Whether to show a "reset" button (15 min of inactivity have passed).
+  const showResetButton = now - lastInteraction >= 15 * 60 * 1000;
+
+  function resetSnapshot() {
+    const t = Date.now();
+    setSnapshotTime(t);
+    setLastInteraction(t);
+    setNow(t);
+  }
 
   async function chooseActivity(activityId: string) {
     await supabase.from("viewings").insert({
@@ -608,11 +646,11 @@ export default function StartPage() {
               </div>
 
               <div className="flex items-center gap-3 flex-wrap">
-                {availableMinutes > 0 ? (
+                {liveAvailableMinutes > 0 ? (
                   <p className="text-gray-300 text-sm">
                     Aktiviteter skal v&aelig;re f&aelig;rdige kl.{" "}
                     <span className="font-bold text-green-400">{endTime}</span>. Du har{" "}
-                    <span className="font-bold text-green-400">{availableMinutes} min</span>{" "}
+                    <span className="font-bold text-green-400">{liveAvailableMinutes} min</span>{" "}
                     tilbage.
                   </p>
                 ) : (
@@ -620,17 +658,6 @@ export default function StartPage() {
                     Sluttidspunktet er overskredet.
                   </p>
                 )}
-                <button
-                  onClick={() => setShowOverflow((v) => !v)}
-                  title="Vis aktiviteter op til 15 minutter over tiden"
-                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
-                    showOverflow
-                      ? "bg-amber-600 hover:bg-amber-700 text-white"
-                      : "bg-gray-800 hover:bg-gray-700 text-gray-500"
-                  }`}
-                >
-                  +15 min
-                </button>
               </div>
             </div>
           )}
@@ -679,9 +706,19 @@ export default function StartPage() {
       )}
 
       {/* Step 4: suggestions */}
-      {selectedPersons.size > 0 && selectedCategories.size > 0 && (availableMinutes > 0 || showOverflow) && (
+      {selectedPersons.size > 0 && selectedCategories.size > 0 && snapshotAvailableMinutes > 0 && (
         <section className="space-y-4">
-          <h2 className="text-lg font-semibold">Forslag</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-semibold">Forslag</h2>
+            {showResetButton && (
+              <button
+                onClick={resetSnapshot}
+                className="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded-lg text-xs font-medium transition-colors animate-pulse"
+              >
+                Opdater tidspunkt
+              </button>
+            )}
+          </div>
           {suggestions.length === 0 ? (
             <div className="bg-gray-900 rounded-xl p-6 text-center">
               <p className="text-gray-400">
@@ -705,7 +742,7 @@ export default function StartPage() {
                   redoRequestPersons,
                   effectivePrepMinutes,
                   isLastMinute,
-                  isOverflow,
+                  isOverdue,
                 }) => {
                   const isChosen = !!recentViewing;
 
@@ -715,7 +752,7 @@ export default function StartPage() {
                       className={`rounded-xl p-4 flex gap-4 transition-all ${
                         isChosen
                           ? "bg-green-950 ring-2 ring-green-500 border-l-4 border-green-400"
-                          : isOverflow
+                          : isOverdue
                             ? "bg-gray-900 opacity-60 animate-border-blink border-2 border-transparent"
                             : `bg-gray-900 ${allHighRated ? "ring-2 ring-green-500/50" : ""} ${
                                 isFilm && availableOnPlatform ? "border-l-4 border-purple-500" : ""
@@ -741,12 +778,12 @@ export default function StartPage() {
                           <h3 className="font-semibold text-lg">
                             {activity.title}
                             {isLastMinute && !isChosen && (
-                              <span className="ml-2" title="Tiden er knap!">
+                              <span className="ml-2 animate-flame-blink" title="Tiden er knap!">
                                 &#x1F525;
                               </span>
                             )}
                           </h3>
-                          {isOverflow && (
+                          {isOverdue && (
                             <span className="text-xs bg-red-800/50 text-red-300 px-1.5 py-0.5 rounded font-medium">
                               Over tid
                             </span>
