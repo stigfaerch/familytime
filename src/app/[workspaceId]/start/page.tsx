@@ -53,12 +53,25 @@ function getBedtimeForPerson(p: Person, ws: Workspace, weekend: boolean): string
   return weekend ? ws.default_bedtime_weekend : ws.default_bedtime_weekday;
 }
 
-/** Minutes from a given timestamp to a clock time ("HH:MM") today. */
+/** Minutes from a given timestamp to a clock time ("HH:MM").
+ *  If the target time is more than 3 hours in the past it wraps to tomorrow,
+ *  so that e.g. "00:30" at 22:00 resolves to 00:30 tomorrow (+150 min). */
 function minutesFromTo(fromMs: number, timeStr: string): number {
   const [h, m] = timeStr.split(":").map(Number);
   const target = new Date(fromMs);
   target.setHours(h, m, 0, 0);
-  return Math.floor((target.getTime() - fromMs) / 60000);
+  let diff = Math.floor((target.getTime() - fromMs) / 60000);
+  if (diff < -180) diff += 24 * 60;
+  return diff;
+}
+
+/** Whether a clock time ("HH:MM") resolves to tomorrow relative to a timestamp
+ *  (i.e. the same >3 h-in-the-past rule used by minutesFromTo). */
+function isTimeTomorrow(fromMs: number, timeStr: string): boolean {
+  const [h, m] = timeStr.split(":").map(Number);
+  const target = new Date(fromMs);
+  target.setHours(h, m, 0, 0);
+  return Math.floor((target.getTime() - fromMs) / 60000) < -180;
 }
 
 /** Cooldown applies to films only. Returns true if the activity should be hidden. */
@@ -332,6 +345,12 @@ export default function StartPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const liveAvailableMinutes = useMemo(
     () => (bagkant ? minutesFromTo(now, endTime) : 0),
+    [bagkant, endTime, now],
+  );
+  // Whether the resolved end-time falls tomorrow (midnight-crossing bagkant).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const endTimeIsTomorrow = useMemo(
+    () => (bagkant ? isTimeTomorrow(now, endTime) : false),
     [bagkant, endTime, now],
   );
   const filmPrepMinutes = workspace?.film_preparation_minutes ?? 10;
@@ -649,7 +668,11 @@ export default function StartPage() {
                 {liveAvailableMinutes > 0 ? (
                   <p className="text-gray-300 text-sm">
                     Aktiviteter skal v&aelig;re f&aelig;rdige kl.{" "}
-                    <span className="font-bold text-green-400">{endTime}</span>. Du har{" "}
+                    <span className="font-bold text-green-400">{endTime}</span>
+                    <span className="text-gray-500 text-xs ml-1">
+                      ({endTimeIsTomorrow ? "i morgen" : "i dag"})
+                    </span>
+                    . Du har{" "}
                     <span className="font-bold text-green-400">{liveAvailableMinutes} min</span>{" "}
                     tilbage.
                   </p>
